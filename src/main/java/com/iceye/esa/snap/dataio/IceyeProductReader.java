@@ -1,10 +1,6 @@
 package com.iceye.esa.snap.dataio;
 
 import com.bc.ceres.core.ProgressMonitor;
-import com.iceye.esa.snap.dataio.grd.IceyeGRDCogProductReader;
-import com.iceye.esa.snap.dataio.grd.IceyeGRDProductReader;
-import com.iceye.esa.snap.dataio.slc.IceyeSLCCogProductReader;
-import com.iceye.esa.snap.dataio.slc.IceyeSLCProductReader;
 import com.iceye.esa.snap.dataio.util.IceyeXConstants;
 import org.esa.s1tbx.commons.io.SARReader;
 import org.esa.snap.core.dataio.ProductReader;
@@ -125,7 +121,7 @@ public class IceyeProductReader extends SARReader {
             }
 
         } else {
-            ((com.iceye.esa.snap.dataio.slc.IceyeSLCProductReader) reader).callReadBandRasterData(sourceOffsetX, sourceOffsetY, sourceWidth, sourceHeight,
+            ((com.iceye.esa.snap.dataio.IceyeSLCProductReader) reader).callReadBandRasterData(sourceOffsetX, sourceOffsetY, sourceWidth, sourceHeight,
                     sourceStepX, sourceStepY, destBand, destOffsetX, destOffsetY, destWidth, destHeight, destBuffer, pm);
         }
     }

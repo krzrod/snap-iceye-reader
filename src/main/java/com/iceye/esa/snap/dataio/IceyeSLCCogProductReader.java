@@ -1,4 +1,4 @@
-package com.iceye.esa.snap.dataio.grd;
+package com.iceye.esa.snap.dataio;
 
 import com.bc.ceres.core.ProgressMonitor;
 import com.iceye.esa.snap.dataio.model.JsonMetadataWrapper;
@@ -11,16 +11,14 @@ import org.esa.s1tbx.commons.product.Missions;
 import org.esa.s1tbx.io.geotiffxml.GeoTiffUtils;
 import org.esa.snap.core.dataio.IllegalFileFormatException;
 import org.esa.snap.core.dataio.ProductReaderPlugIn;
-import org.esa.snap.core.datamodel.Band;
-import org.esa.snap.core.datamodel.MetadataElement;
-import org.esa.snap.core.datamodel.Product;
-import org.esa.snap.core.datamodel.ProductData;
+import org.esa.snap.core.datamodel.*;
 import org.esa.snap.core.util.StringUtils;
 import org.esa.snap.core.util.SystemUtils;
 import org.esa.snap.core.util.io.FileUtils;
 import org.esa.snap.engine_utilities.datamodel.AbstractMetadata;
 import org.esa.snap.engine_utilities.datamodel.Unit;
 import org.esa.snap.engine_utilities.eo.Constants;
+import org.esa.snap.engine_utilities.gpf.OperatorUtils;
 import org.esa.snap.engine_utilities.gpf.ReaderUtils;
 
 import javax.imageio.ImageReadParam;
@@ -38,19 +36,20 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.ParseException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 
-import static com.iceye.esa.snap.dataio.util.ConversionUtil.convertStringToDoubleArray;
+import static com.iceye.esa.snap.dataio.util.ConversionUtil.*;
 
-public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
+public class IceyeSLCCogProductReader extends IceyeTiffReader {
 
     private final Object lock = new Object();
 
-    private static final Logger LOG = Logger.getLogger(IceyeGRDCogProductReader.class.getName());
+    private static final Logger LOG = Logger.getLogger(IceyeSLCCogProductReader.class.getName());
 
-    public IceyeGRDCogProductReader(final ProductReaderPlugIn readerPlugIn) {
+    public IceyeSLCCogProductReader(final ProductReaderPlugIn readerPlugIn) {
         super(readerPlugIn);
     }
 
@@ -62,7 +61,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
     }
 
     @Override
-    protected Product readProductNodesImpl() {
+    protected Product readProductNodesImpl() throws IOException {
         initReader();
         try {
             final Path inputPath = getPathFromInput(getInput());
@@ -86,9 +85,10 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             final int rasterWidth = Integer.parseInt(this.tiffFields.get(IceyeXConstants.NUM_SAMPLES_PER_LINE.toUpperCase()));
             final int rasterHeight = Integer.parseInt(this.tiffFields.get(IceyeXConstants.NUM_OUTPUT_LINES.toUpperCase()));
 
-            product = new Product(inputFile.getName(), productType, rasterWidth, rasterHeight, this);
-            //todo: temp test
-            product.setPreferredTileSize(512, 512);
+            product = new Product(inputFile.getName(),
+                    productType,
+                    rasterWidth, rasterHeight,
+                    this);
             product.setFileLocation(inputFile);
             product.setDescription(getProductDescription());
             product.setStartTime(ProductData.UTC.parse(this.tiffFields.get(IceyeXConstants.ACQUISITION_START_UTC.toUpperCase()), standardDateFormat));
@@ -96,10 +96,10 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
 
             addMetadataToProduct();
             addBandsToProduct();
-            addGeoCodingToProduct();
             addTiePointGridsToProduct();
+            addGeoCodingToProduct();
             addCommonSARMetadata(product);
-            addDopplerCentroidCoefficients();
+            addDopplerMetadata();
 
             product.getGcpGroup();
             product.setModified(false);
@@ -109,8 +109,8 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             return product;
         } catch (Exception e) {
             SystemUtils.LOG.severe(e.getMessage());
-            return product;
         }
+        return null;
     }
 
     private JsonMetadataWrapper getJsonMetadata(Path inputPath) {
@@ -134,23 +134,40 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
 
             InputStream inStream = new BufferedInputStream(Files.newInputStream(inputFile.toPath()));
             ImageInputStream imgStream = ImageIOFile.createImageInputStream(inStream, new Dimension(rasterWidth, rasterHeight));
-
             final ImageReader reader = GeoTiffUtils.getTiffIIOReader(imgStream);
             final ImageIOFile img = new ImageIOFile(name, imgStream, reader, inputFile);
 
             String polarization = tiffFields.get(IceyeXConstants.MDS1_TX_RX_POLAR.toUpperCase());
-            String bandName = "Amplitude_" + polarization;
-            final Band band = new Band(bandName, ProductData.TYPE_UINT32, rasterWidth, rasterHeight);
-            band.setUnit(Unit.AMPLITUDE);
-            band.setNoDataValue(0);
-            band.setNoDataValueUsed(true);
+            String cntStr = "_" + polarization;
 
-            product.addBand(band);
-            bandMap.put(band, new ImageIOFile.BandInfo(band, img, 0, 0));
+            if (isComplex) {
+                final Band bandI = new Band("i" + cntStr, ProductData.TYPE_UINT32, rasterWidth, rasterHeight);
+                bandI.setUnit(Unit.REAL);
+                bandI.setNoDataValue(0);
+                bandI.setNoDataValueUsed(true);
+                product.addBand(bandI);
+                bandMap.put(bandI, new ImageIOFile.BandInfo(bandI, img, 0, 0));
 
-            SARReader.createVirtualIntensityBand(product, band, '_' + polarization);
-        } catch (Exception e) {
+                final Band bandQ = new Band("q" + cntStr, ProductData.TYPE_UINT32, rasterWidth, rasterHeight);
+                bandQ.setUnit(Unit.IMAGINARY);
+                bandQ.setNoDataValue(0);
+                bandQ.setNoDataValueUsed(true);
+                product.addBand(bandQ);
+                bandMap.put(bandQ, new ImageIOFile.BandInfo(bandQ, img, 0, 0));
 
+                ReaderUtils.createVirtualIntensityBand(product, bandI, bandQ, cntStr);
+            } else {
+                final Band band = new Band("Amplitude" + cntStr, ProductData.TYPE_UINT32, rasterWidth, rasterHeight);
+                band.setUnit(Unit.AMPLITUDE);
+                band.setNoDataValue(0);
+                band.setNoDataValueUsed(true);
+                product.addBand(band);
+                bandMap.put(band, new ImageIOFile.BandInfo(band, img, 0, 0));
+
+                createVirtualIntensityBand(product, band, cntStr);
+            }
+        } catch (IOException e) {
+            SystemUtils.LOG.severe(e.getMessage());
         }
     }
 
@@ -163,9 +180,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
         addAbstractedMetadataHeader(product.getMetadataRoot());
     }
 
-    @Override
-    protected void addAbstractedMetadataHeader(MetadataElement root) {
-
+    private void addAbstractedMetadataHeader(MetadataElement root) {
         final MetadataElement absRoot = AbstractMetadata.addAbstractedMetadataHeader(root);
 
         try {
@@ -185,19 +200,21 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.REL_ORBIT, Integer.valueOf(tiffFields.get(IceyeXConstants.REL_ORBIT.toUpperCase())));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.ABS_ORBIT, Integer.valueOf(tiffFields.get(IceyeXConstants.ABS_ORBIT.toUpperCase())));
 
+//            double[] localIncidenceAngles = (double[]) netcdfFile.getRootGroup().findVariable(IceyeXConstants.INCIDENCE_ANGLES).read().getStorage();
+            //todo check the incidence angles
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.incidence_near, Double.valueOf(tiffFields.get(IceyeXConstants.INCIDENCE_NEAR.toUpperCase())));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.incidence_far, Double.valueOf(tiffFields.get(IceyeXConstants.INCIDENCE_FAR.toUpperCase())));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.slice_num, IceyeXConstants.SLICE_NUM_DEFAULT_VALUE);
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.data_take_id, IceyeXConstants.DATA_TAKE_ID_DEFAULT_VALUE);
-            String geoRefSystem = StringUtils.isNullOrEmpty(tiffFields.get(IceyeXConstants.GEO_REFERENCE_SYSTEM.toUpperCase())) ? IceyeXConstants.GEO_REFERENCE_SYSTEM_DEFAULT_VALUE : tiffFields.get(IceyeXConstants.GEO_REFERENCE_SYSTEM.toUpperCase());
+            String geoRefSystem = StringUtils.isNullOrEmpty(tiffFields.get(IceyeXConstants.GEO_REFERENCE_SYSTEM.toUpperCase()))
+                    ? IceyeXConstants.GEO_REFERENCE_SYSTEM_DEFAULT_VALUE : tiffFields.get(IceyeXConstants.GEO_REFERENCE_SYSTEM.toUpperCase());
+
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.geo_ref_system, geoRefSystem);
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.first_line_time, ProductData.UTC.parse(tiffFields.get(IceyeXConstants.FIRST_LINE_TIME.toUpperCase()), standardDateFormat));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.last_line_time, ProductData.UTC.parse(tiffFields.get(IceyeXConstants.LAST_LINE_TIME.toUpperCase()), standardDateFormat));
 
-
             double[] firstNear = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_NEAR.toUpperCase()));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.first_near_lat, firstNear[0]);
-
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.first_near_long, firstNear[1]);
             double[] firstFar = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_FAR.toUpperCase()));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.first_far_lat, firstFar[0]);
@@ -227,6 +244,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             final int rasterWidth = Integer.parseInt(tiffFields.get(IceyeXConstants.NUM_SAMPLES_PER_LINE.toUpperCase()));
             final int rasterHeight = Integer.parseInt(tiffFields.get(IceyeXConstants.NUM_OUTPUT_LINES.toUpperCase()));
             double totalSize = (rasterHeight * rasterWidth * 2 * 2) / (1024.0f * 1024.0f);
+
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.TOT_SIZE, totalSize);
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.num_output_lines, Integer.valueOf(tiffFields.get(IceyeXConstants.NUM_OUTPUT_LINES.toUpperCase())));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.num_samples_per_line, Integer.valueOf(tiffFields.get(IceyeXConstants.NUM_SAMPLES_PER_LINE.toUpperCase())));
@@ -265,22 +283,98 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.azimuth_bandwidth, Double.valueOf(tiffFields.get(IceyeXConstants.AZIMUTH_BANDWIDTH.toUpperCase())));
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.multilook_flag, IceyeXConstants.MULTI_LOOK_FLAG_DEFAULT_VALUE);
             AbstractMetadata.setAttribute(absRoot, AbstractMetadata.coregistered_stack, IceyeXConstants.CO_REGISTERED_STACK_DEFAULT_VALUE);
-            addOrbitStateVectors(absRoot);
-            addSRGRCoefficients(absRoot);
 
+            addOrbitStateVectors(absRoot);
         } catch (ParseException e) {
             SystemUtils.LOG.severe(e.getMessage());
         }
     }
 
     @Override
-    protected void addGeoCodingToProduct() {
+    protected void addOrbitStateVectors(final MetadataElement absRoot) {
+        try {
+            final MetadataElement orbitVectorListElem = absRoot.getElement(AbstractMetadata.orbit_state_vectors);
+
+            String[] stateVectorTime = convertDateStringToStringArray(tiffFields.get(IceyeXConstants.STATE_VECTOR_TIME.toUpperCase()));
+            final int numPoints = stateVectorTime.length;
+            final double[] satellitePositionX = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.ORBIT_VECTOR_N_X_POS.toUpperCase()));
+            final double[] satellitePositionY = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.ORBIT_VECTOR_N_Y_POS.toUpperCase()));
+            final double[] satellitePositionZ = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.ORBIT_VECTOR_N_Z_POS.toUpperCase()));
+            final double[] satelliteVelocityX = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.ORBIT_VECTOR_N_X_VEL.toUpperCase()));
+            final double[] satelliteVelocityY = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.ORBIT_VECTOR_N_Y_VEL.toUpperCase()));
+            final double[] satelliteVelocityZ = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.ORBIT_VECTOR_N_Z_VEL.toUpperCase()));
+            ProductData.UTC stateVectorUTC = ProductData.UTC.parse(stateVectorTime[0], standardDateFormat);
+            AbstractMetadata.setAttribute(absRoot, AbstractMetadata.STATE_VECTOR_TIME, stateVectorUTC);
+            for (int i = 0; i < numPoints; i++) {
+                ProductData.UTC vectorUTC = ProductData.UTC.parse(stateVectorTime[i], standardDateFormat);
+
+                final MetadataElement orbitVectorElem = new MetadataElement(AbstractMetadata.orbit_vector + (i + 1));
+                orbitVectorElem.setAttributeUTC(AbstractMetadata.orbit_vector_time, vectorUTC);
+
+                orbitVectorElem.setAttributeDouble(AbstractMetadata.orbit_vector_x_pos, satellitePositionX[i]);
+                orbitVectorElem.setAttributeDouble(AbstractMetadata.orbit_vector_y_pos, satellitePositionY[i]);
+                orbitVectorElem.setAttributeDouble(AbstractMetadata.orbit_vector_z_pos, satellitePositionZ[i]);
+                orbitVectorElem.setAttributeDouble(AbstractMetadata.orbit_vector_x_vel, satelliteVelocityX[i]);
+                orbitVectorElem.setAttributeDouble(AbstractMetadata.orbit_vector_y_vel, satelliteVelocityY[i]);
+                orbitVectorElem.setAttributeDouble(AbstractMetadata.orbit_vector_z_vel, satelliteVelocityZ[i]);
+
+                orbitVectorListElem.addElement(orbitVectorElem);
+            }
+        } catch (ParseException e) {
+            SystemUtils.LOG.severe(e.getMessage());
+        }
+    }
+
+    @Override
+    protected void addTiePointGridsToProduct() {
+        addIncidenceAnglesSlantRangeTime(product);
+        addGeocodingFromMetadata(product);
+    }
+
+    private void addIncidenceAnglesSlantRangeTime(final Product product) {
+
+        final int gridWidth = 11;
+        final int gridHeight = 11;
+        final float subSamplingX = product.getSceneRasterWidth() / (float) (gridWidth - 1);
+        final float subSamplingY = product.getSceneRasterHeight() / (float) (gridHeight - 1);
+
+        final double nearRangeAngle = Double.parseDouble(this.tiffFields.get(IceyeXConstants.INCIDENCE_NEAR.toUpperCase()));
+        final double farRangeAngle = Double.parseDouble(this.tiffFields.get(IceyeXConstants.INCIDENCE_FAR.toUpperCase()));
+
+        final double firstRangeTime = Double.parseDouble(this.tiffFields.get(IceyeXConstants.FIRST_PIXEL_TIME.toUpperCase())) * Constants.sTOns;
+        final double samplesPerLine = Integer.parseInt(this.tiffFields.get(IceyeXConstants.NUM_SAMPLES_PER_LINE.toUpperCase()));
+        final double rangeSamplingRate = Double.valueOf(tiffFields.get(IceyeXConstants.RANGE_SAMPLING_RATE.toUpperCase()));
+        final double lastRangeTime = firstRangeTime + samplesPerLine / rangeSamplingRate * Constants.sTOns;
+
+        final float[] incidenceCorners = new float[]{(float) nearRangeAngle, (float) farRangeAngle, (float) nearRangeAngle, (float) farRangeAngle};
+        final float[] slantRange = new float[]{(float) firstRangeTime, (float) lastRangeTime, (float) firstRangeTime, (float) lastRangeTime};
+
+        final float[] fineAngles = new float[gridWidth * gridHeight];
+        final float[] fineTimes = new float[gridWidth * gridHeight];
+
+        ReaderUtils.createFineTiePointGrid(2, 2, gridWidth, gridHeight, incidenceCorners, fineAngles);
+        ReaderUtils.createFineTiePointGrid(2, 2, gridWidth, gridHeight, slantRange, fineTimes);
+
+        final TiePointGrid incidentAngleGrid = new TiePointGrid(OperatorUtils.TPG_INCIDENT_ANGLE, gridWidth, gridHeight, 0, 0,
+                subSamplingX, subSamplingY, fineAngles);
+        incidentAngleGrid.setUnit(Unit.DEGREES);
+        product.addTiePointGrid(incidentAngleGrid);
+
+        final TiePointGrid slantRangeGrid = new TiePointGrid(OperatorUtils.TPG_SLANT_RANGE_TIME, gridWidth, gridHeight, 0, 0,
+                subSamplingX, subSamplingY, fineTimes);
+        slantRangeGrid.setUnit(Unit.NANOSECONDS);
+        product.addTiePointGrid(slantRangeGrid);
+    }
+
+    private void addGeocodingFromMetadata(final Product product) {
 
         final MetadataElement absRoot = AbstractMetadata.getAbstractedMetadata(product);
+
         double[] firstNear = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_NEAR.toUpperCase()));
         double[] firstFar = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_FAR.toUpperCase()));
         double[] lastNear = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_NEAR.toUpperCase()));
         double[] lastFar = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_FAR.toUpperCase()));
+
         final double latUL = firstNear[0];
         final double lonUL = firstNear[1];
         final double latUR = firstFar[0];
@@ -311,6 +405,124 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
     }
 
     @Override
+    protected void addGeoCodingToProduct() {
+        //todo: not sure if needed
+
+//        if (product.getSceneGeoCoding() == null) {
+//            NetCDFReader.setTiePointGeoCoding(product);
+//        }
+//        try {
+//            if (product.getSceneGeoCoding() == null) {
+//                NetCDFReader.setPixelGeoCoding(product);
+//            }
+//        } catch (Exception e) {
+//            throw new RuntimeException("Failed to setPixelGeocoding", e);
+//        }
+//    }
+    }
+
+    private void addDopplerMetadata() {
+        final MetadataElement absRoot = AbstractMetadata.getAbstractedMetadata(product);
+        final String imagingMode = absRoot.getAttributeString("ACQUISITION_MODE");
+
+        if (imagingMode.equalsIgnoreCase("spotlight")) {
+            final MetadataElement dopplerSpotlightElem = new MetadataElement("dopplerSpotlight");
+            absRoot.addElement(dopplerSpotlightElem);
+            addDopplerRateAndCentroidSpotlight(dopplerSpotlightElem);
+            addAzimuthTimeZpSpotlight(dopplerSpotlightElem);
+        }
+        addDopplerCentroidCoefficients();
+    }
+
+    private void addDopplerRateAndCentroidSpotlight(MetadataElement elem) {
+        // Compute doppler rate and centroid
+        MetadataElement origProdRoot = AbstractMetadata.getOriginalProductMetadata(product);
+        MetadataElement dopplerRateCoeffs = origProdRoot.getElement(IceyeXConstants.DR_COEFFS);
+        double[] coeffs = convertStringToDoubleArrayBySpace(tiffFields.get(IceyeXConstants.DR_COEFFS.toUpperCase()));
+        String dopplerRate = String.valueOf(coeffs[0]); // take first coefficient
+        final double fmRate = Double.parseDouble(dopplerRate);
+        final double dopplerCentroid = 0.0; // TODO: load from original metadata once it's accurate
+
+        final int rasterWidth = product.getSceneRasterWidth();
+        final double[] dopplerRateSpotlight = new double[rasterWidth];
+        final double[] dopplerCentroidSpotlight = new double[rasterWidth];
+
+        for (int i = 0; i < rasterWidth; i++) {
+            dopplerRateSpotlight[i] = fmRate;
+            dopplerCentroidSpotlight[i] = dopplerCentroid;
+        }
+
+        // Save in metadata
+        String dopplerRateSpotlightStr = Arrays.toString(dopplerRateSpotlight).replace("]", "").replace("[", "");
+        String dopplerCentroidSpotlightStr = Arrays.toString(dopplerCentroidSpotlight).replace("]", "").replace("[", "");
+
+        AbstractMetadata.addAbstractedAttribute(elem, "dopplerRateSpotlight",
+                ProductData.TYPE_ASCII, "", "Doppler Rate Spotlight");
+        AbstractMetadata.setAttribute(elem, "dopplerRateSpotlight", dopplerRateSpotlightStr);
+
+        AbstractMetadata.addAbstractedAttribute(elem, "dopplerCentroidSpotlight",
+                ProductData.TYPE_ASCII, "", "Doppler Centroid Spotlight");
+        AbstractMetadata.setAttribute(elem, "dopplerCentroidSpotlight", dopplerCentroidSpotlightStr);
+    }
+
+    private void addAzimuthTimeZpSpotlight(MetadataElement elem) {
+        // Compute azimuth time
+        MetadataElement origProdRoot = AbstractMetadata.getOriginalProductMetadata(product);
+        final double firstAzimuthTimeZp = timeUTCtoSecs(tiffFields.get(IceyeXConstants.FIRST_LINE_TIME.toUpperCase()));
+        final double lastAzimuthTimeZp = timeUTCtoSecs(tiffFields.get(IceyeXConstants.LAST_LINE_TIME.toUpperCase()));
+        final double AzimuthTimeZpOffset = firstAzimuthTimeZp - 0.5 * (firstAzimuthTimeZp + lastAzimuthTimeZp);
+
+        // Save in metadata
+        final MetadataElement azimuthTimeZd = new MetadataElement("azimuthTimeZdSpotlight");
+        elem.addElement(azimuthTimeZd);
+        AbstractMetadata.addAbstractedAttribute(azimuthTimeZd, "AzimuthTimeZdOffset",
+                ProductData.TYPE_FLOAT64, "", "Azimuth Time Zero Doppler Offset");
+        AbstractMetadata.setAttribute(azimuthTimeZd, "AzimuthTimeZdOffset", AzimuthTimeZpOffset);
+    }
+
+    private double timeUTCtoSecs(String myDate) {
+        ProductData.UTC localDateTime = null;
+        try {
+            localDateTime = ProductData.UTC.parse(myDate, standardDateFormat);
+        } catch (ParseException e) {
+            SystemUtils.LOG.severe(e.getMessage());
+        }
+        return localDateTime.getMJD() * 24.0 * 3600.0;
+    }
+
+    private void addDopplerCentroidCoefficients() {
+
+        final MetadataElement absRoot = AbstractMetadata.getAbstractedMetadata(product);
+
+        final MetadataElement dopplerCentroidCoefficientsElem = absRoot.getElement(AbstractMetadata.dop_coefficients);
+        final MetadataElement dopplerListElem = new MetadataElement(AbstractMetadata.dop_coef_list + ".1");
+        dopplerCentroidCoefficientsElem.addElement(dopplerListElem);
+
+        final ProductData.UTC utcTime;
+        try {
+            utcTime = ProductData.UTC.parse(convertDateStringToStringArray(tiffFields.get(IceyeXConstants.DC_ESTIMATE_TIME_UTC.toUpperCase()))[0], standardDateFormat);
+            dopplerListElem.setAttributeUTC(AbstractMetadata.dop_coef_time, utcTime);
+        } catch (ParseException e) {
+            SystemUtils.LOG.severe(e.getMessage());
+        }
+
+        AbstractMetadata.addAbstractedAttribute(dopplerListElem, AbstractMetadata.slant_range_time,
+                ProductData.TYPE_FLOAT64, "ns", "Slant Range Time");
+        AbstractMetadata.setAttribute(dopplerListElem, AbstractMetadata.slant_range_time, 0.0);
+
+        int dimensionColumn = Integer.valueOf(tiffFields.get(IceyeXConstants.DC_ESTIMATE_POLY_ORDER.toUpperCase())) + 1;
+        String[] coefValues = convertDateStringToStringArrayBySpace(tiffFields.get(IceyeXConstants.DC_ESTIMATE_COEFFS.toUpperCase()));
+
+        for (int i = 0; i < dimensionColumn; i++) {
+            final double coefValue = Double.parseDouble(coefValues[i]);
+            final MetadataElement coefElem = new MetadataElement(AbstractMetadata.coefficient + '.' + (i + 1));
+            dopplerListElem.addElement(coefElem);
+            AbstractMetadata.addAbstractedAttribute(coefElem, AbstractMetadata.dop_coef,
+                    ProductData.TYPE_FLOAT64, "", "Doppler Centroid Coefficient");
+            AbstractMetadata.setAttribute(coefElem, AbstractMetadata.dop_coef, coefValue);
+        }
+    }
+
     public void callReadBandRasterData(int sourceOffsetX, int sourceOffsetY, int sourceWidth, int sourceHeight,
                                        int sourceStepX, int sourceStepY, Band destBand, int destOffsetX,
                                        int destOffsetY, int destWidth, int destHeight, ProductData destBuffer,
@@ -332,7 +544,8 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             ImageIOFile img = bandInfo.img;
             final ImageReader reader = img.getReader();
             final ImageReadParam param = reader.getDefaultReadParam();
-            LOG.info("-----START READING NEW RASTER -------");
+            LOG.info("-----SLC START READING NEW RASTER, BAND= " + destBand.getName() + "-------");
+
 
             LOG.info("Tile request: SRC offsetX=" + sourceOffsetX + ", SRC OffsetY="
                     + sourceOffsetY + ", stepX=" + sourceStepX + ", stepY=" + sourceStepY + ", "
@@ -371,23 +584,5 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
                 sampleModel.getSamples(0, 0, w, h, bandSampleOffset, (int[]) destBuffer.getElems(), dataBuffer);
             }
         }
-    }
-
-    @Override
-    public void close() throws IOException {
-        product = null;
-        tiffFields = null;
-        bandMap.forEach((key, value) -> {
-            ImageIOFile img = value.img;
-            try {
-                if (img != null) {
-                    img.close();
-                }
-            } catch (Exception e) {
-                SystemUtils.LOG.severe("Failed to close stream of band");
-            }
-        });
-        bandMap.clear();
-        super.close();
     }
 }

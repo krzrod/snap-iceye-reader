@@ -1,7 +1,6 @@
-package com.iceye.esa.snap.dataio.slc;
+package com.iceye.esa.snap.dataio;
 
 import com.bc.ceres.core.ProgressMonitor;
-import com.iceye.esa.snap.dataio.IceyeBasicReader;
 import com.iceye.esa.snap.dataio.util.IceyeXConstants;
 import org.esa.s1tbx.commons.product.Missions;
 import org.esa.s1tbx.io.netcdf.NetCDFReader;
