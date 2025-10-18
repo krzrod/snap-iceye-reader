@@ -6,14 +6,24 @@
     <parent>
         <groupId>org.esa.s1tbx</groupId>
         <artifactId>s1tbx</artifactId>
-        <version>8.0.0-SNAPSHOT</version>
+        <version>10.0.0-SNAPSHOT</version>
     </parent>
 
     <groupId>com.iceye.esa.snap</groupId>
-    <artifactId>iceye-slc-reader</artifactId>
-    <version>2.0.7</version>
-    <name>ICEYE snap Desktop Product readers</name>
+    <artifactId>iceye-slc-reader-new</artifactId>
+    <version>2.1.7</version>
+    <name>New ICEYE snap Desktop Product readers</name>
     <packaging>nbm</packaging>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>it.geosolutions.imageio-ext</groupId>
+                <artifactId>imageio-ext-tiff</artifactId>
+                <version>1.4.15</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <dependencies>
         <dependency>
@@ -44,6 +54,21 @@
             <groupId>org.esa.s1tbx</groupId>
             <artifactId>s1tbx-io</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-core</artifactId>
+            <version>2.17.2</version> <!-- or SNAP's version -->
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.17.2</version>
+        </dependency>
     </dependencies>
 
     <build>
@@ -59,8 +84,9 @@
 
         <plugins>
             <plugin>
-                <groupId>org.codehaus.mojo</groupId>
+                <groupId>org.apache.netbeans.utilities</groupId>
                 <artifactId>nbm-maven-plugin</artifactId>
+                <version>14.4</version>
                 <configuration>
                     <publicPackages>
                         <publicPackage>org.esa.s1tbx.*</publicPackage>
@@ -76,6 +102,17 @@
                 <artifactId>maven-jar-plugin</artifactId>
                 <configuration>
                     <useDefaultManifestFile>true</useDefaultManifestFile>
+                </configuration>
+            </plugin>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.5.1</version>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                    <debug>true</debug>
+                    <encoding>UTF-8</encoding>
+                    <optimize>true</optimize>
                 </configuration>
             </plugin>
 

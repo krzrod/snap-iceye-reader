@@ -4,7 +4,7 @@ package com.iceye.esa.snap.dataio.util;
  * @author Ahmad Hamouda
  */
 public class IceyeXConstants {
-    public static final String ICEYE_PLUGIN_DESCRIPTION = "ICEYE Products";
+    public static final String ICEYE_PLUGIN_DESCRIPTION = "ICEYE Products New";
     public static final String ICEYE_FILE_PREFIX = "ICEYE";
     //    IceyeProductProductReader
     public static final String PRODUCT = "product_name";
@@ -31,6 +31,7 @@ public class IceyeXConstants {
     public static final String LAST_NEAR = "coord_last_near";
     public static final String LAST_FAR = "coord_last_far";
     public static final String PASS = "orbit_direction";
+    public static final String LOOK_DIRECTION = "look_direction";
     public static final String MDS1_TX_RX_POLAR = "polarization";
     public static final String AZIMUTH_LOOKS = "azimuth_looks";
     public static final String RANGE_LOOKS = "range_looks";
@@ -74,6 +75,7 @@ public class IceyeXConstants {
     public static final String ACQUISITION_END_UTC = "acquisition_end_utc";
     public static final String NUMBER_OF_STATE_VECTORS = "number_of_state_vectors";
     public static final String DC_ESTIMATE_COEFFS = "dc_estimate_coeffs";
+    public static final String DR_COEFFS = "doppler_rate_coeffs";
     public static final String S_I = "s_i";
     public static final String S_Q = "s_q";
     public static final String S_AMPLITUDE = "s_amplitude";
@@ -100,8 +102,8 @@ public class IceyeXConstants {
     public static final String COMPLEX = "COMPLEX";
     public static final String DETECTED = "DETECTED";
     //    IceyeProductReaderPlugIn
-    private static final String ICEYE_FORMAT_NAMES = "IceyeProduct";
-    private static final String ICEYE_FORMAT_FILE_EXTENSIONS = "h5";
+    private static final String ICEYE_FORMAT_NAMES = "IceyeProduct,IceyeProductNew";
+    private static final String ICEYE_FORMAT_FILE_EXTENSIONS = "h5,tif";
 
     private IceyeXConstants() {
         //not allowed to instantiated

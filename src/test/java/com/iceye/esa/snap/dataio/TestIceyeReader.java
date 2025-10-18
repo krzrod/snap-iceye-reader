@@ -21,6 +21,8 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.io.File;
+import java.time.Duration;
+import java.time.Instant;
 
 
 /**
@@ -28,7 +30,8 @@ import java.io.File;
  */
 public class TestIceyeReader {
 
-    public static final String TESTING_IMAGE_PATH = "/home/ahmad/Documents/Projects/snap/test";
+    public static final String LEGACY_TESTING_IMAGE_PATH = "D:\\iceye_sftp\\iceye_sftp\\images\\legacy\\strip\\grd";
+    public static final String NEW_TESTING_IMG_PATH = "D:\\iceye_sftp\\iceye_sftp\\images\\cog\\strip\\grd";
     private IceyeProductReaderPlugIn readerPlugin;
     private ProductReader reader;
 
@@ -48,7 +51,7 @@ public class TestIceyeReader {
     public void testOpenAll() {
         TestProcessor testProcessor = new TestProcessor(100, 100, 100, 100, 1, true, false);
 
-        File file = new File(TESTING_IMAGE_PATH);
+        File file = new File(LEGACY_TESTING_IMAGE_PATH);
         File[] folderPaths = new File[1];
         folderPaths[0] = file;
         try {
@@ -56,5 +59,33 @@ public class TestIceyeReader {
         } catch (Exception e) {
             Assert.fail();
         }
+    }
+
+    @Test
+    public void testOpenAllNew() {
+        TestProcessor testProcessor = new TestProcessor(100, 100, 100, 100, 1, true, false);
+
+        File file = new File(NEW_TESTING_IMG_PATH);
+        File[] folderPaths = new File[1];
+        folderPaths[0] = file;
+        try {
+            testProcessor.recurseReadFolder(this, folderPaths, readerPlugin, reader, null, exceptionExemptions);
+        } catch (Exception e) {
+            Assert.fail();
+        }
+    }
+
+    @Test
+    public void testAzimuthTimeInterval() {
+        String start = "2025-08-07T10:31:22.039Z";
+        String end = "2025-08-07T10:31:32.013Z";
+        Instant endInstant = Instant.parse(end);
+        Instant startInstant = Instant.parse(start);
+
+        double totalSeconds = Duration.between(startInstant, endInstant).toMillis() / 1000.0;
+
+        double interval = totalSeconds / 26697;
+
+        System.out.println(interval);
     }
 }

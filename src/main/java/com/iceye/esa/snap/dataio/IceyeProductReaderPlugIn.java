@@ -6,16 +6,12 @@ import org.esa.snap.core.dataio.DecodeQualification;
 import org.esa.snap.core.dataio.ProductReader;
 import org.esa.snap.engine_utilities.gpf.ReaderUtils;
 
-import java.io.File;
-import java.util.concurrent.atomic.AtomicBoolean;
-
+import java.nio.file.Path;
 
 /**
  * @author Ahmad Hamouda
  */
 public class IceyeProductReaderPlugIn extends NetCDFReaderPlugIn {
-
-    private AtomicBoolean isTiff = new AtomicBoolean();
 
     public IceyeProductReaderPlugIn() {
         FORMAT_NAMES = IceyeXConstants.getIceyeFormatNames();
@@ -26,26 +22,24 @@ public class IceyeProductReaderPlugIn extends NetCDFReaderPlugIn {
     /**
      * Validate file extension and start
      *
-     * @param file
+     * @param path
      * @return check result
      */
     @Override
-    protected DecodeQualification checkProductQualification(final File file) {
-        final String fileName = file.getName().toLowerCase();
-        if (fileName.endsWith(".h5") && fileName.startsWith(IceyeXConstants.ICEYE_FILE_PREFIX.toLowerCase())) {
-            isTiff.set(false);
-            return DecodeQualification.INTENDED;
-        } else if ((fileName.endsWith(".tif") || fileName.endsWith(".tiff")) && fileName.startsWith(IceyeXConstants.ICEYE_FILE_PREFIX.toLowerCase())) {
-            isTiff.set(true);
-            return DecodeQualification.INTENDED;
+    protected DecodeQualification checkProductQualification(final Path path) {
+        final String fileName = path.getFileName().toString().toUpperCase();
+        if (fileName.startsWith(IceyeXConstants.ICEYE_FILE_PREFIX)) {
+            if (fileName.endsWith(".H5") || fileName.endsWith(".TIF") || fileName.endsWith(".XML") || fileName.endsWith(".JSON")) {
+                return DecodeQualification.INTENDED;
+            }
         }
         return DecodeQualification.UNABLE;
     }
 
     @Override
     public DecodeQualification getDecodeQualification(final Object input) {
-        File file = ReaderUtils.getFileFromInput(input);
-        return file == null ? DecodeQualification.UNABLE : this.checkProductQualification(file);
+        final Path path = ReaderUtils.getPathFromInput(input);
+        return path == null ? DecodeQualification.UNABLE : this.checkProductQualification(path);
     }
 
     /**
@@ -55,10 +49,6 @@ public class IceyeProductReaderPlugIn extends NetCDFReaderPlugIn {
      */
     @Override
     public ProductReader createReaderInstance() {
-        if (isTiff.get()) {
-            return new IceyeGRDProductReader(this);
-        }
         return new IceyeProductReader(this);
     }
-
 }
