@@ -26,8 +26,8 @@ public final class CoordinatesMapper {
     }
 
     public static Map<String, CoordinatePair> assignCorners(Coordinates coords,
-                                                            String orbitState,
-                                                            String obsDir) {
+                                                                           String orbitState,
+                                                                           String obsDir) {
         Map<String, CoordinatePair> out = new HashMap<>();
 
         boolean ascending = orbitState.equalsIgnoreCase("ascending");

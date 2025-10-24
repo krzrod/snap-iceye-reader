@@ -30,7 +30,7 @@ import java.util.Map;
 /**
  * @author Ahmad Hamouda, Carlos Hernandez, Esteban Aguilera
  */
-public class IceyeSLCProductReader extends IceyeBasicReader {
+public class IceyeSLCProductReader extends AbstractIceyeReader {
 
     private final Map<Band, Variable> bandMap = new HashMap<>(10);
     private NetcdfFile netcdfFile = null;

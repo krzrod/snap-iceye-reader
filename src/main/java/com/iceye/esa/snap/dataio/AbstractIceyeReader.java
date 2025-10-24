@@ -8,14 +8,14 @@ import org.esa.snap.core.datamodel.ProductData;
 
 import java.text.DateFormat;
 
-public abstract class IceyeBasicReader extends SARReader {
+public abstract class AbstractIceyeReader extends SARReader {
 
     protected final DateFormat standardDateFormat = ProductData.UTC.createDateFormat("yyyy-MM-dd'T'HH:mm:ss");
     protected Product product;
     protected boolean isComplex = false;
 
 
-    protected IceyeBasicReader(ProductReaderPlugIn readerPlugIn) {
+    protected AbstractIceyeReader(ProductReaderPlugIn readerPlugIn) {
         super(readerPlugIn);
     }
 

@@ -276,19 +276,25 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
     @Override
     protected void addGeoCodingToProduct() {
 
+        boolean lookLeft = ! tiffFields.get(IceyeXConstants.ANTENNA_POINTING.toUpperCase()).equalsIgnoreCase(IceyeXConstants.RIGHT);
+
         final MetadataElement absRoot = AbstractMetadata.getAbstractedMetadata(product);
-        double[] firstNear = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_NEAR.toUpperCase()));
-        double[] firstFar = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_FAR.toUpperCase()));
-        double[] lastNear = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_NEAR.toUpperCase()));
-        double[] lastFar = convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_FAR.toUpperCase()));
-        final double latUL = firstNear[0];
-        final double lonUL = firstNear[1];
-        final double latUR = firstFar[0];
-        final double lonUR = firstFar[1];
-        final double latLL = lastNear[0];
-        final double lonLL = lastNear[1];
-        final double latLR = lastFar[0];
-        final double lonLR = lastFar[1];
+        double[][] coords = new double[][]{
+            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_NEAR.toUpperCase())),
+            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_FAR.toUpperCase())),
+            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_NEAR.toUpperCase())),
+            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_FAR.toUpperCase()))
+        };
+
+        int offset = lookLeft ? 1 : 0;
+        final double latUL = coords[offset][0];
+        final double lonUL = coords[offset][1];
+        final double latUR = coords[1 - offset][0];
+        final double lonUR = coords[1 - offset][1];
+        final double latLL = coords[2 + offset][0];
+        final double lonLL = coords[2 + offset][1];
+        final double latLR = coords[3 - offset][0];
+        final double lonLR = coords[3 - offset][1];
 
         absRoot.setAttributeDouble(AbstractMetadata.first_near_lat, latUL);
         absRoot.setAttributeDouble(AbstractMetadata.first_near_long, lonUL);
@@ -325,6 +331,10 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
                                           int destOffsetY, int destWidth, int destHeight, ProductData destBuffer,
                                           ProgressMonitor pm) throws IOException {
 
+
+        boolean lookLeft = ! tiffFields.get(IceyeXConstants.ANTENNA_POINTING.toUpperCase()).equalsIgnoreCase(IceyeXConstants.RIGHT);
+        int imageHeight = Integer.parseInt(this.tiffFields.get(IceyeXConstants.NUM_OUTPUT_LINES.toUpperCase()));
+
         final ImageIOFile.BandInfo bandInfo = bandMap.get(destBand);
         if (bandInfo != null && bandInfo.img != null) {
 
@@ -341,12 +351,18 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
 
             final Raster data;
             synchronized (lock) {
-                param.setSourceSubsampling(sourceStepX, sourceStepY,
-                        sourceOffsetX % sourceStepX,
-                        sourceOffsetY % sourceStepY);
+                param.setSourceSubsampling(sourceStepY, sourceStepX,
+                        sourceOffsetY % sourceStepY,
+                        sourceOffsetX % sourceStepX);
+
+
+                Rectangle rect = lookLeft
+                        ? new Rectangle(imageHeight - destHeight - destOffsetY, destOffsetX, destHeight, destWidth)
+                        : new Rectangle(destOffsetY, destOffsetX, destHeight, destWidth);
 
                 final RenderedImage image = reader.readAsRenderedImage(0, param);
-                data = image.getData(new Rectangle(destOffsetX, destOffsetY, destWidth, destHeight));
+
+                data = image.getData(rect);
                 LOG.info("---[NEW] - numbands=" + data.getNumBands() + ", tile=" + image.getTileWidth() + ", " + image.getTileHeight() + ", num X tiles=" + image.getNumXTiles() + ",Num Y tiles=" + image.getNumYTiles());
             }
 
@@ -355,23 +371,56 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
             final DataBuffer dataBuffer = data.getDataBuffer();
             final SampleModel sampleModel = data.getSampleModel();
             if (destBuffer.getType() == ProductData.TYPE_FLOAT32) {
-                sampleModel.getSamples(0, 0, w, h, bandSampleOffset, (float[]) destBuffer.getElems(), dataBuffer);
+                float[] target = (float[]) destBuffer.getElems();
+                float[] tmp = new float[target.length];
+                sampleModel.getSamples(0, 0, w, h, bandSampleOffset, tmp, dataBuffer);
+
+                for (int i = 0; i < destHeight; i++) {
+                    for (int j = 0; j < destWidth; j++) {
+                        int tmpIndex = lookLeft
+                                ? destHeight * (j + 1) - 1 - i
+                                : j * destHeight + i;
+
+                        target[i * destWidth + j] = tmp[tmpIndex];
+                    }
+                    pm.worked(1);
+                }
             } else if (destBuffer.getType() == ProductData.TYPE_UINT16) {
                 // SNAP buffer is short[]
                 short[] target = (short[]) destBuffer.getElems();
-
                 // Use temporary int[] because getSamples can only fill int[]
                 int[] tmp = new int[target.length];
                 sampleModel.getSamples(0, 0, w, h, bandSampleOffset, tmp, dataBuffer);
 
-                for (int i = 0; i < tmp.length; i++) {
-                    target[i] = (short) (tmp[i] & 0xFFFF); // clamp to 16 bits
+                for (int i = 0; i < destHeight; i++) {
+                    for (int j = 0; j < destWidth; j++) {
+                        int tmpIndex = lookLeft
+                                ? destHeight * (j + 1) - 1 - i
+                                : j * destHeight + i;
+
+                        target[i * destWidth + j] = (short) (tmp[tmpIndex] & 0xFFFF);
+                    }
+                    pm.worked(1);
                 }
             } else {
-                sampleModel.getSamples(0, 0, w, h, bandSampleOffset, (int[]) destBuffer.getElems(), dataBuffer);
+                int[] target = (int[]) destBuffer.getElems();
+                int[] tmp = new int[target.length];
+                sampleModel.getSamples(0, 0, w, h, bandSampleOffset, tmp, dataBuffer);
+
+                for (int i = 0; i < destHeight; i++) {
+                    for (int j = 0; j < destWidth; j++) {
+                        int tmpIndex = lookLeft
+                                ? destHeight * (j + 1) - 1 - i
+                                : j * destHeight + i;
+
+                        target[i * destWidth + j] = tmp[tmpIndex];
+                    }
+                    pm.worked(1);
+                }
             }
         }
     }
+    //    return dataBuffer.getElemFloat(srcIndex);
 
     @Override
     public void close() throws IOException {

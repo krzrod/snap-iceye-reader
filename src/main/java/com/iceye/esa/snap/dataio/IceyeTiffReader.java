@@ -10,7 +10,7 @@ import org.esa.snap.core.datamodel.MetadataElement;
 import java.util.HashMap;
 import java.util.Map;
 
-public abstract class IceyeTiffReader extends IceyeBasicReader {
+public abstract class IceyeTiffReader extends AbstractIceyeReader {
 
     protected final Map<Band, ImageIOFile.BandInfo> bandMap = new HashMap<>(10);
     protected Map<String, String> tiffFields;

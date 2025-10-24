@@ -6,6 +6,7 @@ import org.esa.snap.core.dataio.DecodeQualification;
 import org.esa.snap.core.dataio.ProductReader;
 import org.esa.snap.engine_utilities.gpf.ReaderUtils;
 
+import java.io.IOException;
 import java.nio.file.Path;
 
 /**

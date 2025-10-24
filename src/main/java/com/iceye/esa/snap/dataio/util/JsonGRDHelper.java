@@ -1,6 +1,9 @@
 package com.iceye.esa.snap.dataio.util;
 
 import com.iceye.esa.snap.dataio.model.JsonMetadataWrapper;
+import com.iceye.esa.snap.dataio.model.SarImage;
+import com.iceye.esa.snap.dataio.model.SarImage.SarGeoReference;
+import com.iceye.esa.snap.dataio.util.CoordinatesMapper.CoordinatePair;
 import org.esa.snap.engine_utilities.eo.Constants;
 
 import java.time.Duration;
@@ -12,6 +15,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.iceye.esa.snap.dataio.util.IceyeXConstants.*;
+import static com.iceye.esa.snap.dataio.util.IceyeXsatUtil.getSarGeoReference;
 
 public final class JsonGRDHelper {
 
@@ -214,8 +218,9 @@ public final class JsonGRDHelper {
     }
 
     private static void mapShape(List<Double> shapeDimensions, Map<String, String> tiffFields) {
-        tiffFields.put(NUM_SAMPLES_PER_LINE.toUpperCase(), String.valueOf(shapeDimensions.get(0))); //width
-        tiffFields.put(NUM_OUTPUT_LINES.toUpperCase(), String.valueOf(shapeDimensions.get(1))); //height
+        // image is in shadows-down configuration
+        tiffFields.put(NUM_SAMPLES_PER_LINE.toUpperCase(), String.valueOf(shapeDimensions.get(1))); //width
+        tiffFields.put(NUM_OUTPUT_LINES.toUpperCase(), String.valueOf(shapeDimensions.get(0))); //height
     }
 
     private static void mapPolarization(List<String> polarizations, Map<String, String> tiffFields) {
@@ -286,17 +291,16 @@ public final class JsonGRDHelper {
     }
 
     public static void mapCornerCoordinates(List<List<Double>> rawCoordinates, String orbitState, String lookDirection, Map<String, String> tiffFields) {
-        CoordinatesMapper.Coordinates coordinates = new CoordinatesMapper.Coordinates(rawCoordinates);
-        Map<String, CoordinatesMapper.CoordinatePair> stringCoordinatePairMap = CoordinatesMapper.assignCorners(coordinates, orbitState, lookDirection);
-        CoordinatesMapper.CoordinatePair coordFirstNear = stringCoordinatePairMap.get("coord_first_near");
-        CoordinatesMapper.CoordinatePair coordFirstFar = stringCoordinatePairMap.get("coord_first_far");
-        CoordinatesMapper.CoordinatePair coordLastNear = stringCoordinatePairMap.get("coord_last_near");
-        CoordinatesMapper.CoordinatePair coordLastFar = stringCoordinatePairMap.get("coord_last_far");
 
-        tiffFields.put(FIRST_NEAR.toUpperCase(), "[" + coordFirstNear.lat + ", " + coordFirstNear.lon + "]");
-        tiffFields.put(FIRST_FAR.toUpperCase(), "[" + coordFirstFar.lat + ", " + coordFirstFar.lon + "]");
-        tiffFields.put(LAST_NEAR.toUpperCase(), "[" + coordLastNear.lat + ", " + coordLastNear.lon + "]");
-        tiffFields.put(LAST_FAR.toUpperCase(), "[" + coordLastFar.lat + ", " + coordLastFar.lon + "]");
+        final CoordinatePair[] coordinateSeq = rawCoordinates.stream().map(raw_loc ->
+                        new CoordinatePair(raw_loc.get(0), raw_loc.get(1)))
+                .toArray(CoordinatePair[]::new);
+
+        final SarGeoReference sarGeoRef = getSarGeoReference(coordinateSeq,  ! lookDirection.equalsIgnoreCase(IceyeXConstants.RIGHT));
+        tiffFields.put(FIRST_NEAR.toUpperCase(), "[" + sarGeoRef.firstNear.lat + ", " + sarGeoRef.firstNear.lon + "]");
+        tiffFields.put(FIRST_FAR.toUpperCase(), "[" + sarGeoRef.firstFar.lat + ", " + sarGeoRef.firstFar.lon + "]");
+        tiffFields.put(LAST_NEAR.toUpperCase(), "[" + sarGeoRef.lastNear.lat + ", " + sarGeoRef.lastNear.lon + "]");
+        tiffFields.put(LAST_FAR.toUpperCase(), "[" + sarGeoRef.lastFar.lat + ", " + sarGeoRef.lastFar.lon + "]");
     }
 
     public static void mapCenterCoord(Map<String, Double> centerCoord, String width, String height, Map<String, String> tiffFields) {
