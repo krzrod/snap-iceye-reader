@@ -9,3 +9,6 @@
 .classpath
 .project
 .settings/
+
+/s1tbx
+prep-debug.cmd
