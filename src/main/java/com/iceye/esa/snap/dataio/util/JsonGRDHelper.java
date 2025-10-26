@@ -54,21 +54,15 @@ public final class JsonGRDHelper {
     private static final String ICEYE_RANGE_NEAR = "iceye:range_near";
     private static final String ICEYE_RANGE = "iceye:range";
 
+
     public static void mapJsonMetadataToTiffFields(JsonMetadataWrapper metadataWrapper, Map<String, String> tiffFields) {
         Map<String, Object> iceyeProperties = metadataWrapper.getIceyeProperties();
 
+        sortTimePropsAsc(START_DATETIME, END_DATETIME, iceyeProperties);
+        sortTimePropsAsc(ZERO_DOPPLER_START_UTC, ZERO_DOPPLER_END_UTC, iceyeProperties);
+
         String startTime = (String) iceyeProperties.get(START_DATETIME);
         String endTime = (String) iceyeProperties.get(END_DATETIME);
-
-        Instant startInstant = Instant.parse(startTime);
-        Instant endInstant = Instant.parse(endTime);
-        if (startInstant.isAfter(endInstant)) {
-            String temp = endTime;
-            endTime = startTime;
-            startTime = temp;
-        }
-
-
         tiffFields.put(PASS.toUpperCase(), (String) iceyeProperties.get(ORBIT_DIRECTION));
         tiffFields.put(ANTENNA_POINTING.toUpperCase(), (String) iceyeProperties.get(OBSERVATION_DIRECTION));
         tiffFields.put(PULSE_REPETITION_FREQUENCY.toUpperCase(), String.valueOf(iceyeProperties.get(PROCESSING_PRF)));
@@ -321,5 +315,17 @@ public final class JsonGRDHelper {
     public static void mapFirstPixelTime(Double slantRangeNear, Map<String, String> tiffFields) {
         double firstPixelTime = (slantRangeNear * 2) / Constants.lightSpeed * 2;
         tiffFields.put(FIRST_PIXEL_TIME.toUpperCase(), String.valueOf(firstPixelTime));
+    }
+
+    private static boolean sortTimePropsAsc(final String propNameStart, final String propNameEnd, final Map<String, Object> iceyeProperties) {
+        final String valueStart =  (String) iceyeProperties.get(propNameStart);
+        final String valueEnd =  (String) iceyeProperties.get(propNameEnd);
+        if (Instant.parse(valueStart).isAfter(Instant.parse(valueEnd))) {
+            iceyeProperties.put(propNameStart, valueEnd);
+            iceyeProperties.put(propNameEnd, valueStart);
+            return true;
+        }
+
+        return false;
     }
 }

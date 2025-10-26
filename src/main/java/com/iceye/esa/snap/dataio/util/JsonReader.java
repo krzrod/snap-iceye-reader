@@ -41,7 +41,8 @@ public class JsonReader {
 
             // correction - ObjMapper automatically converts '0.0' to Double but '0' to Integer,
             // but we expect them to be Doubles always,  like in doppler centroid coeffs
-            convertNestedLists(properties.get("proj:transform"), JsonReader::intToDouble);
+            convertNestedLists(properties.get("iceye:doppler_centroid_coeffs"), JsonReader::intToDouble);
+            /*convertNestedLists(properties.get("proj:transform"), JsonReader::intToDouble);
             convertNestedLists(properties.get("iceye:doppler_centroid_coeffs"), JsonReader::intToDouble);
             convertNestedLists(properties.get("iceye:doppler_rate_coeffs"), JsonReader::intToDouble);
             convertNestedLists(properties.get("iceye:incidence_angle_coeffs"), JsonReader::intToDouble);
@@ -51,7 +52,7 @@ public class JsonReader {
             convertNestedLists(properties.get("samp_den_coeff"), JsonReader::intToDouble);
             convertNestedLists(properties.get("iceye:ground_to_slant_coeff"), JsonReader::intToDouble);
             convertNestedLists(properties.get("iceye:focal_plane_normal"), JsonReader::intToDouble);
-            convertNestedLists(properties.get("iceye:image_plane_normal"), JsonReader::intToDouble);
+            convertNestedLists(properties.get("iceye:image_plane_normal"), JsonReader::intToDouble);*/
 
             wrapper.setIceyeProperties(properties);
 
