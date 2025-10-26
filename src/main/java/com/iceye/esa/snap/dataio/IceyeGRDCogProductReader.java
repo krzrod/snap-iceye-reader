@@ -1,8 +1,12 @@
 package com.iceye.esa.snap.dataio;
 
 import com.bc.ceres.core.ProgressMonitor;
+import com.iceye.esa.snap.dataio.model.DecimalCoordinates;
 import com.iceye.esa.snap.dataio.model.JsonMetadataWrapper;
+import com.iceye.esa.snap.dataio.model.SarImage;
+import com.iceye.esa.snap.dataio.model.SarImage.SarGeoReference;
 import com.iceye.esa.snap.dataio.util.IceyeXConstants;
+import com.iceye.esa.snap.dataio.util.IceyeXUtil;
 import com.iceye.esa.snap.dataio.util.JsonGRDHelper;
 import com.iceye.esa.snap.dataio.util.JsonReader;
 import org.esa.s1tbx.commons.io.ImageIOFile;
@@ -42,6 +46,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import static com.iceye.esa.snap.dataio.model.DecimalCoordinates.*;
 import static com.iceye.esa.snap.dataio.util.ConversionUtil.convertStringToDoubleArray;
 
 public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
@@ -276,44 +281,36 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
     @Override
     protected void addGeoCodingToProduct() {
 
-        boolean lookLeft = ! tiffFields.get(IceyeXConstants.ANTENNA_POINTING.toUpperCase()).equalsIgnoreCase(IceyeXConstants.RIGHT);
+        SarGeoReference geoReference = new SarGeoReference();
+        geoReference.firstNear = fromLatLon(convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_NEAR.toUpperCase())));
+        geoReference.firstFar = fromLatLon(convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_FAR.toUpperCase())));
+        geoReference.lastNear = fromLatLon(convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_NEAR.toUpperCase())));
+        geoReference.lastFar = fromLatLon(convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_FAR.toUpperCase())));
+
+        if (IceyeXUtil.isLookingLeft(tiffFields)) {
+            geoReference = geoReference.flipNearFar();
+        }
+
+        // UL, UR, LL, LR
+        DecimalCoordinates[] imageCorners =  { geoReference.firstNear, geoReference.firstFar,
+                    geoReference.lastNear, geoReference.lastFar};
+
+        ReaderUtils.addGeoCoding(product, latitudes(imageCorners) , longitudes(imageCorners));
 
         final MetadataElement absRoot = AbstractMetadata.getAbstractedMetadata(product);
-        double[][] coords = new double[][]{
-            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_NEAR.toUpperCase())),
-            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.FIRST_FAR.toUpperCase())),
-            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_NEAR.toUpperCase())),
-            convertStringToDoubleArray(tiffFields.get(IceyeXConstants.LAST_FAR.toUpperCase()))
-        };
-
-        int offset = lookLeft ? 1 : 0;
-        final double latUL = coords[offset][0];
-        final double lonUL = coords[offset][1];
-        final double latUR = coords[1 - offset][0];
-        final double lonUR = coords[1 - offset][1];
-        final double latLL = coords[2 + offset][0];
-        final double lonLL = coords[2 + offset][1];
-        final double latLR = coords[3 - offset][0];
-        final double lonLR = coords[3 - offset][1];
-
-        absRoot.setAttributeDouble(AbstractMetadata.first_near_lat, latUL);
-        absRoot.setAttributeDouble(AbstractMetadata.first_near_long, lonUL);
-        absRoot.setAttributeDouble(AbstractMetadata.first_far_lat, latUR);
-        absRoot.setAttributeDouble(AbstractMetadata.first_far_long, lonUR);
-        absRoot.setAttributeDouble(AbstractMetadata.last_near_lat, latLL);
-        absRoot.setAttributeDouble(AbstractMetadata.last_near_long, lonLL);
-        absRoot.setAttributeDouble(AbstractMetadata.last_far_lat, latLR);
-        absRoot.setAttributeDouble(AbstractMetadata.last_far_long, lonLR);
+        absRoot.setAttributeDouble(AbstractMetadata.first_near_lat, geoReference.firstNear.getLatitude());
+        absRoot.setAttributeDouble(AbstractMetadata.first_near_long, geoReference.firstNear.getLongitude());
+        absRoot.setAttributeDouble(AbstractMetadata.first_far_lat, geoReference.firstFar.getLatitude());
+        absRoot.setAttributeDouble(AbstractMetadata.first_far_long, geoReference.firstFar.getLongitude());
+        absRoot.setAttributeDouble(AbstractMetadata.last_near_lat, geoReference.lastNear.getLatitude());
+        absRoot.setAttributeDouble(AbstractMetadata.last_near_long, geoReference.lastNear.getLongitude());
+        absRoot.setAttributeDouble(AbstractMetadata.last_far_lat, geoReference.lastFar.getLatitude());
+        absRoot.setAttributeDouble(AbstractMetadata.last_far_long, geoReference.lastFar.getLongitude());
 
         AbstractMetadata.setAttribute(absRoot, AbstractMetadata.range_spacing,
                 Double.valueOf(tiffFields.get(IceyeXConstants.RANGE_SPACING.toUpperCase())));
         AbstractMetadata.setAttribute(absRoot, AbstractMetadata.azimuth_spacing,
                 Double.valueOf(tiffFields.get(IceyeXConstants.AZIMUTH_SPACING.toUpperCase())));
-
-        final double[] latCorners = new double[]{latUL, latUR, latLL, latLR};
-        final double[] lonCorners = new double[]{lonUL, lonUR, lonLL, lonLR};
-
-        ReaderUtils.addGeoCoding(product, latCorners, lonCorners);
     }
 
     @Override
@@ -332,7 +329,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
                                           ProgressMonitor pm) throws IOException {
 
 
-        boolean lookLeft = ! tiffFields.get(IceyeXConstants.ANTENNA_POINTING.toUpperCase()).equalsIgnoreCase(IceyeXConstants.RIGHT);
+        boolean lookingLeft = IceyeXUtil.isLookingLeft(tiffFields);
         int imageHeight = Integer.parseInt(this.tiffFields.get(IceyeXConstants.NUM_OUTPUT_LINES.toUpperCase()));
 
         final ImageIOFile.BandInfo bandInfo = bandMap.get(destBand);
@@ -356,7 +353,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
                         sourceOffsetX % sourceStepX);
 
 
-                Rectangle rect = lookLeft
+                Rectangle rect = lookingLeft
                         ? new Rectangle(imageHeight - destHeight - destOffsetY, destOffsetX, destHeight, destWidth)
                         : new Rectangle(destOffsetY, destOffsetX, destHeight, destWidth);
 
@@ -377,7 +374,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
 
                 for (int i = 0; i < destHeight; i++) {
                     for (int j = 0; j < destWidth; j++) {
-                        int tmpIndex = lookLeft
+                        int tmpIndex = lookingLeft
                                 ? destHeight * (j + 1) - 1 - i
                                 : j * destHeight + i;
 
@@ -394,7 +391,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
 
                 for (int i = 0; i < destHeight; i++) {
                     for (int j = 0; j < destWidth; j++) {
-                        int tmpIndex = lookLeft
+                        int tmpIndex = lookingLeft
                                 ? destHeight * (j + 1) - 1 - i
                                 : j * destHeight + i;
 
@@ -409,7 +406,7 @@ public class IceyeGRDCogProductReader extends IceyeGRDProductReader {
 
                 for (int i = 0; i < destHeight; i++) {
                     for (int j = 0; j < destWidth; j++) {
-                        int tmpIndex = lookLeft
+                        int tmpIndex = lookingLeft
                                 ? destHeight * (j + 1) - 1 - i
                                 : j * destHeight + i;
 

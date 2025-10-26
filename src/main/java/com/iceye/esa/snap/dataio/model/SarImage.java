@@ -1,8 +1,5 @@
 package com.iceye.esa.snap.dataio.model;
 
-import com.iceye.esa.snap.dataio.util.CoordinatesMapper;
-import com.iceye.esa.snap.dataio.util.CoordinatesMapper.CoordinatePair;
-
 /**
  * Contains classes modelling a SAR image.
  */
@@ -14,6 +11,16 @@ public class SarImage {
      */
     public static class SarGeoReference
     {
-        public CoordinatePair firstNear, firstFar, lastNear, lastFar;
+        public DecimalCoordinates firstNear, firstFar, lastNear, lastFar;
+
+        public SarGeoReference flipNearFar() {
+            SarGeoReference flipped = new SarGeoReference();
+            flipped.firstNear = this.firstFar;
+            flipped.firstFar = this.firstNear;
+            flipped.lastNear = this.lastFar;
+            flipped.lastFar = this.lastNear;
+            return flipped;
+        }
     }
+
 }

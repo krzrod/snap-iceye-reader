@@ -1,21 +1,18 @@
 package com.iceye.esa.snap.dataio.util;
 
+import com.iceye.esa.snap.dataio.model.DecimalCoordinates;
 import com.iceye.esa.snap.dataio.model.JsonMetadataWrapper;
-import com.iceye.esa.snap.dataio.model.SarImage;
 import com.iceye.esa.snap.dataio.model.SarImage.SarGeoReference;
-import com.iceye.esa.snap.dataio.util.CoordinatesMapper.CoordinatePair;
 import org.esa.snap.engine_utilities.eo.Constants;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static com.iceye.esa.snap.dataio.util.IceyeXConstants.*;
-import static com.iceye.esa.snap.dataio.util.IceyeXsatUtil.getSarGeoReference;
+import static com.iceye.esa.snap.dataio.util.IceyeXUtil.getSarGeoReference;
+import static com.iceye.esa.snap.dataio.util.IceyeXUtil.isLookingLeft;
 
 public final class JsonGRDHelper {
 
@@ -62,6 +59,15 @@ public final class JsonGRDHelper {
 
         String startTime = (String) iceyeProperties.get(START_DATETIME);
         String endTime = (String) iceyeProperties.get(END_DATETIME);
+
+        Instant startInstant = Instant.parse(startTime);
+        Instant endInstant = Instant.parse(endTime);
+        if (startInstant.isAfter(endInstant)) {
+            String temp = endTime;
+            endTime = startTime;
+            startTime = temp;
+        }
+
 
         tiffFields.put(PASS.toUpperCase(), (String) iceyeProperties.get(ORBIT_DIRECTION));
         tiffFields.put(ANTENNA_POINTING.toUpperCase(), (String) iceyeProperties.get(OBSERVATION_DIRECTION));
@@ -119,10 +125,7 @@ public final class JsonGRDHelper {
         mapProductName((String) iceyeProperties.get(PRODUCT_FILENAME), tiffFields);
         mapAzimuthTimeInterval(startTime, endTime, Integer.parseInt(tiffFields.get(NUM_OUTPUT_LINES.toUpperCase())), tiffFields);
         mapDCReferencePixelTime((Double) iceyeProperties.get(ICEYE_RANGE), tiffFields);
-        mapCornerCoordinates(
-                metadataWrapper.getCoordinates(),
-                tiffFields.get(PASS.toUpperCase()),
-                tiffFields.get(ANTENNA_POINTING.toUpperCase()),
+        mapCornerCoordinates(getSarGeoReference(mapJsonToCoordinates(metadataWrapper.getCoordinates()), isLookingLeft(tiffFields)),
                 tiffFields);
         mapCenterCoord
                 ((Map<String, Double>) iceyeProperties.get(CENTROID_COORDINATE),
@@ -131,6 +134,14 @@ public final class JsonGRDHelper {
     }
 
     public static void mapOrbitStates(ArrayList<LinkedHashMap<String, Object>> orbitVectorStates, Map<String, String> tiffFields) {
+
+        orbitVectorStates.sort(new Comparator<LinkedHashMap<String, Object>>() {
+            @Override
+            public int compare(LinkedHashMap<String, Object> o1, LinkedHashMap<String, Object> o2) {
+                return ((String) o1.get("time")).compareTo((String) o2.get("time"));
+            }
+        });
+
         final StringBuilder orbitStateTimes = new StringBuilder("[");
         final StringBuilder positionX = new StringBuilder("[");
         final StringBuilder positionY = new StringBuilder("[");
@@ -290,17 +301,16 @@ public final class JsonGRDHelper {
         return normalizeDateTimeToSnapFormat(grsrZeroDateTime.toString());
     }
 
-    public static void mapCornerCoordinates(List<List<Double>> rawCoordinates, String orbitState, String lookDirection, Map<String, String> tiffFields) {
+    public static void mapCornerCoordinates(final SarGeoReference sarGeoRef, Map<String, String> tiffFields) {
+        tiffFields.put(FIRST_NEAR.toUpperCase(), "[" + sarGeoRef.firstNear.getLatitude() + ", " + sarGeoRef.firstNear.getLongitude() + "]");
+        tiffFields.put(FIRST_FAR.toUpperCase(), "[" + sarGeoRef.firstFar.getLatitude() + ", " + sarGeoRef.firstFar.getLongitude() + "]");
+        tiffFields.put(LAST_NEAR.toUpperCase(), "[" + sarGeoRef.lastNear.getLatitude() + ", " + sarGeoRef.lastNear.getLongitude() + "]");
+        tiffFields.put(LAST_FAR.toUpperCase(), "[" + sarGeoRef.lastFar.getLatitude() + ", " + sarGeoRef.lastFar.getLongitude() + "]");
+    }
 
-        final CoordinatePair[] coordinateSeq = rawCoordinates.stream().map(raw_loc ->
-                        new CoordinatePair(raw_loc.get(0), raw_loc.get(1)))
-                .toArray(CoordinatePair[]::new);
-
-        final SarGeoReference sarGeoRef = getSarGeoReference(coordinateSeq,  ! lookDirection.equalsIgnoreCase(IceyeXConstants.RIGHT));
-        tiffFields.put(FIRST_NEAR.toUpperCase(), "[" + sarGeoRef.firstNear.lat + ", " + sarGeoRef.firstNear.lon + "]");
-        tiffFields.put(FIRST_FAR.toUpperCase(), "[" + sarGeoRef.firstFar.lat + ", " + sarGeoRef.firstFar.lon + "]");
-        tiffFields.put(LAST_NEAR.toUpperCase(), "[" + sarGeoRef.lastNear.lat + ", " + sarGeoRef.lastNear.lon + "]");
-        tiffFields.put(LAST_FAR.toUpperCase(), "[" + sarGeoRef.lastFar.lat + ", " + sarGeoRef.lastFar.lon + "]");
+    public static DecimalCoordinates[] mapJsonToCoordinates(List<List<Double>> rawCoordinates) {
+        return rawCoordinates.stream().map(pairLonLat -> new DecimalCoordinates(pairLonLat.getFirst(), pairLonLat.getLast()))
+                .toArray(DecimalCoordinates[]::new);
     }
 
     public static void mapCenterCoord(Map<String, Double> centerCoord, String width, String height, Map<String, String> tiffFields) {
