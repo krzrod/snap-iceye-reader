@@ -99,6 +99,8 @@ public class IceyeXConstants {
     public static final String GDALMETADATA = "<GDALMetadata";
     public static final String GRD = "grd";
     public static final String SLC = "slc";
+    public static final String GRD_COG = "grd-cog";
+    public static final String SLC_COG = "slc-cog";
     public static final String COMPLEX = "COMPLEX";
     public static final String DETECTED = "DETECTED";
     //    IceyeProductReaderPlugIn

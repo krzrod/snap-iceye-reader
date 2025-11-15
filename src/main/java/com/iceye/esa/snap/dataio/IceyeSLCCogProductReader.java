@@ -523,14 +523,6 @@ public class IceyeSLCCogProductReader extends IceyeTiffReader {
         }
     }
 
-    public void callReadBandRasterData(int sourceOffsetX, int sourceOffsetY, int sourceWidth, int sourceHeight,
-                                       int sourceStepX, int sourceStepY, Band destBand, int destOffsetX,
-                                       int destOffsetY, int destWidth, int destHeight, ProductData destBuffer,
-                                       ProgressMonitor pm) throws IOException {
-        readBandRasterDataImpl(sourceOffsetX, sourceOffsetY, sourceWidth, sourceHeight,
-                sourceStepX, sourceStepY, destBand, destOffsetX, destOffsetY, destWidth, destHeight, destBuffer, pm);
-    }
-
     @Override
     protected void readBandRasterDataImpl(int sourceOffsetX, int sourceOffsetY, int sourceWidth, int sourceHeight,
                                           int sourceStepX, int sourceStepY, Band destBand, int destOffsetX,
