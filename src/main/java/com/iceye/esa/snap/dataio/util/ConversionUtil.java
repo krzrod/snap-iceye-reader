@@ -1,5 +1,6 @@
 package com.iceye.esa.snap.dataio.util;
 
+import it.geosolutions.imageioimpl.plugins.tiff.TIFFImageMetadata;
 import org.esa.snap.core.util.SystemUtils;
 import org.w3c.dom.Document;
 import org.xml.sax.InputSource;
@@ -8,8 +9,18 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.StringReader;
 import java.util.Arrays;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 public final class ConversionUtil {
+
+    public static Optional<GdalMetadata> findGdalMetadata(final TIFFImageMetadata tiffMetadata) {
+        return Stream.of(tiffMetadata.getRootIFD().getTIFFFields())
+                .map(TiffIOUtil::tiffFieldAsStringArray).filter(Objects::nonNull).flatMap(Stream::of)
+                .map(GdalMetadata::fromString).filter(Objects::nonNull).filter(GdalMetadata::isValid)
+                .findFirst();
+    }
 
     public static Document convertStringToXMLDocument(String xmlString) {
         //Parser that produces DOM object trees from XML content

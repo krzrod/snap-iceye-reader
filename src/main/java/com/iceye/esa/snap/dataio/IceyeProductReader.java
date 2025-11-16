@@ -1,7 +1,8 @@
 package com.iceye.esa.snap.dataio;
 
 import com.bc.ceres.core.ProgressMonitor;
-import com.iceye.esa.snap.dataio.util.GdalUtil;
+import com.iceye.esa.snap.dataio.util.ConversionUtil;
+import com.iceye.esa.snap.dataio.util.GdalMetadata;
 import com.iceye.esa.snap.dataio.util.IceyeXConstants;
 import com.iceye.esa.snap.dataio.util.TiffIOUtil;
 import it.geosolutions.imageioimpl.plugins.tiff.TIFFImageMetadata;
@@ -14,13 +15,11 @@ import org.esa.snap.core.datamodel.Product;
 import org.esa.snap.core.datamodel.ProductData;
 import org.esa.snap.core.util.io.FileUtils;
 import org.esa.snap.engine_utilities.gpf.ReaderUtils;
-import org.w3c.dom.Document;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.text.MessageFormat;
-import java.util.Optional;
 
 import static org.esa.snap.core.util.SystemUtils.LOG;
 
@@ -36,8 +35,6 @@ public class IceyeProductReader extends SARReader {
     private static final String READER_CLASS_VM_ARG = "iceyeReaderClass";
 
     private AbstractIceyeReader reader;
-
-    private final GdalUtil gdal = new GdalUtil();
 
     /**
      * Constructs a new abstract product reader.
@@ -80,9 +77,9 @@ public class IceyeProductReader extends SARReader {
     }
 
     private void initReader(final Path inputPath) throws Exception {
-        Class<?> readerCls = determineReaderClassOnVMArg();
+        Class<?> readerCls = evalReaderClassOnVMArg();
         if (readerCls == null) {
-            readerCls = determineReaderClassOnFile(inputPath);
+            readerCls = evalReaderClassOnFile(inputPath);
         }
 
         if (IceyeSLCProductReader.class.equals(readerCls)) {
@@ -101,22 +98,25 @@ public class IceyeProductReader extends SARReader {
             LOG.info("Using ICEYE SLC-COG file format.");
             this.reader = new IceyeSLCCogProductReader(getReaderPlugIn());
         }
+        else if (readerCls != null) {
+            LOG.severe(MessageFormat.format("Unknown ICEYE reader class: {0}.", readerCls.getCanonicalName()));
+        }
 
         if (this.reader == null) {
             throw new IllegalFileFormatException("Unable to determine ICEYE file format.");
         }
     }
 
-    private Class<?> determineReaderClassOnVMArg() {
+    private Class<?> evalReaderClassOnVMArg() {
         String vmArgReaderClassValue = System.getProperty(READER_CLASS_VM_ARG);
         try {
             return vmArgReaderClassValue != null ? Class.forName(vmArgReaderClassValue) : null;
         } catch (ClassNotFoundException e) {
-            throw new IllegalStateException(MessageFormat.format("Invalid ICEYE reader class by VM arg ''{0}''.", vmArgReaderClassValue));
+            throw new IllegalStateException(MessageFormat.format("Invalid ICEYE reader class set by VM arg: ''{0}''.", vmArgReaderClassValue));
         }
     }
 
-    private Class<?> determineReaderClassOnFile(final Path inputPath) throws IOException {
+    private Class<?> evalReaderClassOnFile(final Path inputPath) throws IOException {
         final String fileName = inputPath.getFileName().toString().toLowerCase();
         if (fileName.endsWith(".h5")) {
             return IceyeSLCProductReader.class;
@@ -128,17 +128,17 @@ public class IceyeProductReader extends SARReader {
                             "Missing TIFF metadata, file could not be interpreted by the reader."));
 
             // get GDAL xml out of TIFF metadata
-            final Document gdalMetadata = gdal.findGdalMetadata(tiffMetadata)
+            final GdalMetadata gdalMetadata = ConversionUtil.findGdalMetadata(tiffMetadata)
                     .orElseThrow(() -> new IllegalFileFormatException(
                             "No ICEYE metadata found in the file."));
 
-            if (gdal.checkItemValue(IceyeXConstants.SPH_DESCRIPTOR, IceyeXConstants.GRD, gdalMetadata)) {
+            if (gdalMetadata.checkItemValue(IceyeXConstants.SPH_DESCRIPTOR, IceyeXConstants.GRD)) {
                 return IceyeGRDProductReader.class;
             }
-            else if (gdal.checkItemValue(IceyeXConstants.PRODUCT_TYPE, IceyeXConstants.GRD_COG, gdalMetadata)) {
+            else if (gdalMetadata.checkItemValue(IceyeXConstants.PRODUCT_TYPE, IceyeXConstants.GRD_COG)) {
                 return IceyeGRDCogProductReader.class;
             }
-            else if (gdal.checkItemValue(IceyeXConstants.PRODUCT_TYPE, IceyeXConstants.SLC_COG, gdalMetadata)) {
+            else if (gdalMetadata.checkItemValue(IceyeXConstants.PRODUCT_TYPE, IceyeXConstants.SLC_COG)) {
                 return IceyeSLCCogProductReader.class;
             }
         }
@@ -160,6 +160,10 @@ public class IceyeProductReader extends SARReader {
             inputFile = FileUtils.exchangeExtension(inputFile, ".tif");
         }
 
+        if (! fileName.equalsIgnoreCase(inputFile.getName())) {
+            LOG.warning(MessageFormat.format("Product file was resolved as ''{0}''", inputFile.getName()));
+        }
+
         if (! inputFile.exists()) {
             throw new ProductIOException("Product file cannot be resolved.");
         }
@@ -176,7 +180,7 @@ public class IceyeProductReader extends SARReader {
                                           int destOffsetY, int destWidth, int destHeight, ProductData destBuffer,
                                           ProgressMonitor pm) throws IOException {
         if (this.reader == null) {
-            throw new IllegalStateException("Reader was not initialized properly.");
+            throw new IllegalStateException("Reader was not initialized.");
         }
 
         this.reader.readBandRasterDataImpl(sourceOffsetX, sourceOffsetY, sourceWidth, sourceHeight,

@@ -1,6 +1,7 @@
 package com.iceye.esa.snap.dataio.util;
 
 import it.geosolutions.imageio.plugins.tiff.TIFFField;
+import it.geosolutions.imageio.plugins.tiff.TIFFTag;
 import it.geosolutions.imageioimpl.plugins.tiff.TIFFImageMetadata;
 import it.geosolutions.imageioimpl.plugins.tiff.TIFFImageReader;
 
@@ -11,13 +12,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 public class TiffIOUtil {
 
-
     /**
-     * Attempts to find metadata of a given TIFF image file,  from image at index 0 in the file.
+     * Attempts to find metadata of a given TIFF image file, for image of given index in the file.
      *
      * @param imageIndex index of an image within multi-paged TIFF, zero-based.
      * @param filePath   path to a TIFF file.
@@ -27,7 +26,7 @@ public class TiffIOUtil {
     public static Optional<TIFFImageMetadata> findTIFFMetadata(int imageIndex, final Path filePath) throws IOException {
         try (final ImageInputStream iis = ImageIO.createImageInputStream(filePath.toFile())) {
             TIFFImageReader reader = findImageReader(iis, TIFFImageReader.class)
-                    .orElseThrow(()->new IOException("No TIFF reader for the given file exist."));
+                    .orElseThrow(() -> new IOException("No TIFF reader for the given file exist."));
             reader.reset();
             reader.setInput(iis);
             return Optional.ofNullable((TIFFImageMetadata) reader.getImageMetadata(imageIndex));
@@ -35,9 +34,23 @@ public class TiffIOUtil {
     }
 
     /**
+     * Gets a String[] for given TIFF field, or null if field is not a string-array type.
+     *
+     * @param tiffField
+     * @return String[] if field is of string-array type, or null otherwise
+     */
+    public static String[] tiffFieldAsStringArray(final TIFFField tiffField) {
+        if (tiffField.getType() != TIFFTag.TIFF_ASCII || !(tiffField.getData() instanceof String[])) {
+            return null;
+        }
+
+        return (String[]) tiffField.getData();
+    }
+
+    /**
      * Finds requested image reader for the stream amongst all image readers registered in ImageIO.
      *
-     * @param imageInputStream input stream of the image.
+     * @param imageInputStream     input stream of the image.
      * @param requestedReaderClass requested type of the reeader.
      * @return non-empty if reader was found, otherwise empty.
      */
@@ -52,6 +65,4 @@ public class TiffIOUtil {
 
         return Optional.empty();
     }
-
-
 }
